@@ -1,10 +1,13 @@
 """
 🍺 Beer Ranker — deployed edition (Google login + Supabase).
 
-- Sign-in: Google via Streamlit's native st.login (OIDC). The taster's identity
-  is their Google account, so scores are separated automatically.
-- Storage: Supabase Postgres (beers + ratings) and Supabase Storage (photos).
-- Ranking: a beer's score is the average across every taster.
+Public read / private write:
+  - Anyone can view the Leaderboard, Browse, and Stats (no login).
+  - Adding and rating beers requires Google login (st.login, OIDC).
+  - The Manage tab (delete/photo) is limited to admins listed in secrets.
+
+Storage: Supabase Postgres (beers + ratings) and Supabase Storage (photos).
+Ranking: a beer's score is the average across every taster.
 
 Config lives in .streamlit/secrets.toml — see DEPLOY.md. Never commit real secrets.
 """
@@ -84,23 +87,36 @@ def upload_photo(file):
 
 
 # ---------------------------------------------------------------------------
-# Auth gate
+# Who is this? (guests allowed; login unlocks actions)
 # ---------------------------------------------------------------------------
-if not st.user.is_logged_in:
-    st.title("🍺 Beer Ranker")
-    st.write("A private beer-ranking club. Sign in with Google to start tasting.")
-    if st.button("Log in with Google", type="primary"):
-        st.login()
-    st.stop()
+def admin_emails():
+    """Admins come from secrets: [admin] emails = ["a@x.com", ...].
+    If that key is absent, every logged-in user is treated as an admin (keeps
+    the old behaviour and avoids locking yourself out). Add the list to lock
+    Manage down once the app is public."""
+    try:
+        return {e.lower() for e in st.secrets["admin"]["emails"]}
+    except Exception:
+        return set()
 
-EMAIL = st.user.email
-NAME = st.user.name or EMAIL
+
+logged_in = bool(st.user.is_logged_in)
+EMAIL = st.user.email if logged_in else None
+NAME = (st.user.name or st.user.email) if logged_in else None
+
+_admins = admin_emails()
+is_admin = logged_in and (not _admins or EMAIL.lower() in _admins)
 
 with st.sidebar:
     st.header("🍺 Beer Ranker")
-    st.caption(f"Signed in as **{NAME}**")
-    if st.button("Log out"):
-        st.logout()
+    if logged_in:
+        st.caption(f"Signed in as **{NAME}**")
+        if st.button("Log out"):
+            st.logout()
+    else:
+        st.caption("Viewing as a guest")
+        if st.button("Log in with Google", type="primary"):
+            st.login()
     st.divider()
     st.caption("A beer's rank is the average of every taster's scores. "
                "Five dimensions, each out of 5.")
@@ -116,7 +132,7 @@ def score_inputs(prefix, existing=None):
 
 
 # ---------------------------------------------------------------------------
-# Load data once per run
+# Load data once per run (reads are open to everyone)
 # ---------------------------------------------------------------------------
 beers = fetch_beers()
 ratings = fetch_ratings()
@@ -129,99 +145,112 @@ if "flash" in st.session_state:
     st.balloons()
     st.success(f"🍺 Saved — **{nm}** now averages {av:.2f}/5")
 
-tab_add, tab_rate, tab_board, tab_browse, tab_stats, tab_manage = st.tabs(
-    ["➕ Add beer", "⭐ Rate beers", "🏆 Leaderboard", "🖼️ Browse",
-     "📊 Stats", "🗂️ Manage"])
+if not logged_in:
+    st.info("👀 You're viewing as a guest. **Log in with Google** (sidebar) to "
+            "add or rate beers.")
+
+# Build tabs based on who's here.
+tab_defs = []
+if logged_in:
+    tab_defs += [("add", "➕ Add beer"), ("rate", "⭐ Rate beers")]
+tab_defs += [("board", "🏆 Leaderboard"), ("browse", "🖼️ Browse"), ("stats", "📊 Stats")]
+if is_admin:
+    tab_defs += [("manage", "🗂️ Manage")]
+
+_objs = st.tabs([label for _, label in tab_defs])
+T = {key: obj for (key, _), obj in zip(tab_defs, _objs)}
 
 
 # ---------------------------------------------------------------------------
-# Add beer
+# Add beer  (login required)
 # ---------------------------------------------------------------------------
-with tab_add:
-    st.subheader("Add a beer and give it your scores")
-    name = st.text_input("Beer name *", key="add_name", placeholder="e.g. Petrus Blonde")
-    c1, c2 = st.columns([2, 1])
-    style = c1.text_input("Style / brewery", key="add_style",
-                          placeholder="e.g. Blonde 6.5% Petrus")
-    c2.date_input("Date", value=date.today(), key="add_date")
-    description = st.text_area("Description (shared)", key="add_desc",
-                               placeholder="What is this beer? Colour, vibe…")
+if "add" in T:
+    with T["add"]:
+        st.subheader("Add a beer and give it your scores")
+        name = st.text_input("Beer name *", key="add_name", placeholder="e.g. Petrus Blonde")
+        c1, c2 = st.columns([2, 1])
+        style = c1.text_input("Style / brewery", key="add_style",
+                              placeholder="e.g. Blonde 6.5% Petrus")
+        c2.date_input("Date", value=date.today(), key="add_date")
+        description = st.text_area("Description (shared)", key="add_desc",
+                                   placeholder="What is this beer? Colour, vibe…")
 
-    st.markdown(f"**Your scores — each out of {SCALE_MAX:.0f}**")
-    scores = score_inputs("add")
-    avg = sum(scores.values()) / len(DIM_KEYS)
-    pc1, pc2 = st.columns([1, 2])
-    pc1.markdown(f"<div style='font-size:2.2em;font-weight:700;'>{avg:.2f}"
-                 f"<span style='font-size:0.4em;color:#888;'> /5</span></div>",
-                 unsafe_allow_html=True)
-    pc2.markdown(star_html(avg, 28), unsafe_allow_html=True)
+        st.markdown(f"**Your scores — each out of {SCALE_MAX:.0f}**")
+        scores = score_inputs("add")
+        avg = sum(scores.values()) / len(DIM_KEYS)
+        pc1, pc2 = st.columns([1, 2])
+        pc1.markdown(f"<div style='font-size:2.2em;font-weight:700;'>{avg:.2f}"
+                     f"<span style='font-size:0.4em;color:#888;'> /5</span></div>",
+                     unsafe_allow_html=True)
+        pc2.markdown(star_html(avg, 28), unsafe_allow_html=True)
 
-    notes = st.text_input("Your note (optional)", key="add_notes")
-    photo_file = st.file_uploader("Photo", type=["png", "jpg", "jpeg", "webp"],
-                                  key="add_photo")
+        notes = st.text_input("Your note (optional)", key="add_notes")
+        photo_file = st.file_uploader("Photo", type=["png", "jpg", "jpeg", "webp"],
+                                      key="add_photo")
 
-    if st.button("Add beer 🍺", type="primary", use_container_width=True):
-        if not name.strip():
-            st.error("Give the beer a name first.")
+        if st.button("Add beer 🍺", type="primary", use_container_width=True):
+            if not name.strip():
+                st.error("Give the beer a name first.")
+            else:
+                with st.spinner("Saving…"):
+                    url = upload_photo(photo_file) if photo_file else None
+                    bid = add_beer(name.strip(), style.strip(), parse_abv(style),
+                                   description.strip(), url)
+                    upsert_rating(bid, EMAIL, NAME, scores, notes.strip())
+                st.session_state["flash"] = (name.strip(), avg)
+                for key in ["add_name", "add_style", "add_desc", "add_notes",
+                            "add_photo"] + [f"add_{k}" for k in DIM_KEYS]:
+                    st.session_state.pop(key, None)
+                st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Rate beers  (login required)
+# ---------------------------------------------------------------------------
+if "rate" in T:
+    with T["rate"]:
+        st.subheader("Rate an existing beer")
+        if not beers:
+            st.info("No beers yet — add one first.")
         else:
-            with st.spinner("Saving…"):
-                url = upload_photo(photo_file) if photo_file else None
-                bid = add_beer(name.strip(), style.strip(), parse_abv(style),
-                               description.strip(), url)
-                upsert_rating(bid, EMAIL, NAME, scores, notes.strip())
-            st.session_state["flash"] = (name.strip(), avg)
-            for key in ["add_name", "add_style", "add_desc", "add_notes",
-                        "add_photo"] + [f"add_{k}" for k in DIM_KEYS]:
-                st.session_state.pop(key, None)
-            st.rerun()
+            bdf = pd.DataFrame(beers)
+            bdf["label"] = bdf.apply(lambda r: f'{r["name"]} — {r["style"] or ""}', axis=1)
+            choice = st.selectbox("Beer", bdf["label"], key="rate_pick")
+            brow = bdf[bdf["label"] == choice].iloc[0]
+            bid = int(brow["id"])
 
+            existing = get_rating(bid, EMAIL)
+            if existing:
+                st.caption("You've rated this before — sliders show your last scores.")
+            grow = lb[lb["beer_id"] == bid].iloc[0]
+            if grow["n_raters"] > 0:
+                st.markdown(f"Group so far: {star_html(grow['avg'], 16)} "
+                            f"**{grow['avg']:.2f}/5** from {int(grow['n_raters'])} taster(s)",
+                            unsafe_allow_html=True)
 
-# ---------------------------------------------------------------------------
-# Rate beers
-# ---------------------------------------------------------------------------
-with tab_rate:
-    st.subheader("Rate an existing beer")
-    if not beers:
-        st.info("No beers yet — add one first.")
-    else:
-        bdf = pd.DataFrame(beers)
-        bdf["label"] = bdf.apply(lambda r: f'{r["name"]} — {r["style"] or ""}', axis=1)
-        choice = st.selectbox("Beer", bdf["label"], key="rate_pick")
-        brow = bdf[bdf["label"] == choice].iloc[0]
-        bid = int(brow["id"])
-
-        existing = get_rating(bid, EMAIL)
-        if existing:
-            st.caption("You've rated this before — sliders show your last scores.")
-        grow = lb[lb["beer_id"] == bid].iloc[0]
-        if grow["n_raters"] > 0:
-            st.markdown(f"Group so far: {star_html(grow['avg'], 16)} "
-                        f"**{grow['avg']:.2f}/5** from {int(grow['n_raters'])} taster(s)",
+            scores = score_inputs("rate", existing)
+            notes = st.text_input("Your note (optional)",
+                                  value=(existing or {}).get("notes") or "", key="rate_notes")
+            avg = sum(scores.values()) / len(DIM_KEYS)
+            st.markdown(star_html(avg, 24) + f" &nbsp;<b>{avg:.2f}/5</b>",
                         unsafe_allow_html=True)
 
-        scores = score_inputs("rate", existing)
-        notes = st.text_input("Your note (optional)",
-                              value=(existing or {}).get("notes") or "", key="rate_notes")
-        avg = sum(scores.values()) / len(DIM_KEYS)
-        st.markdown(star_html(avg, 24) + f" &nbsp;<b>{avg:.2f}/5</b>",
-                    unsafe_allow_html=True)
-
-        if st.button("Save my scores ⭐", type="primary", use_container_width=True):
-            with st.spinner("Saving…"):
-                upsert_rating(bid, EMAIL, NAME, scores, notes.strip())
-                new_lb = build_leaderboard(fetch_beers(), fetch_ratings())
-                new_avg = float(new_lb[new_lb["beer_id"] == bid]["avg"].iloc[0])
-            st.session_state["flash"] = (brow["name"], new_avg)
-            for k in DIM_KEYS:
-                st.session_state.pop(f"rate_{k}", None)
-            st.session_state.pop("rate_notes", None)
-            st.rerun()
+            if st.button("Save my scores ⭐", type="primary", use_container_width=True):
+                with st.spinner("Saving…"):
+                    upsert_rating(bid, EMAIL, NAME, scores, notes.strip())
+                    new_lb = build_leaderboard(fetch_beers(), fetch_ratings())
+                    new_avg = float(new_lb[new_lb["beer_id"] == bid]["avg"].iloc[0])
+                st.session_state["flash"] = (brow["name"], new_avg)
+                for k in DIM_KEYS:
+                    st.session_state.pop(f"rate_{k}", None)
+                st.session_state.pop("rate_notes", None)
+                st.rerun()
 
 
 # ---------------------------------------------------------------------------
-# Leaderboard
+# Leaderboard  (public)
 # ---------------------------------------------------------------------------
-with tab_board:
+with T["board"]:
     rated = lb[lb["n_raters"] > 0].sort_values("avg", ascending=False) \
         if not lb.empty else lb
     if rated.empty:
@@ -271,9 +300,9 @@ with tab_board:
 
 
 # ---------------------------------------------------------------------------
-# Browse
+# Browse  (public)
 # ---------------------------------------------------------------------------
-with tab_browse:
+with T["browse"]:
     if lb.empty:
         st.info("Nothing to browse yet.")
     else:
@@ -318,9 +347,9 @@ with tab_browse:
 
 
 # ---------------------------------------------------------------------------
-# Stats
+# Stats  (public)
 # ---------------------------------------------------------------------------
-with tab_stats:
+with T["stats"]:
     rated = lb[lb["n_raters"] > 0] if not lb.empty else lb
     if rated.empty:
         st.info("Log some ratings and charts will show up here.")
@@ -361,41 +390,42 @@ with tab_stats:
 
 
 # ---------------------------------------------------------------------------
-# Manage
+# Manage  (admins only)
 # ---------------------------------------------------------------------------
-with tab_manage:
-    if not beers:
-        st.info("Nothing to manage yet.")
-    else:
-        bdf = pd.DataFrame(beers)
-        st.subheader("Add or replace a photo")
-        pick = bdf.apply(lambda r: f'#{int(r["id"])} — {r["name"]}', axis=1)
-        chosen = st.selectbox("Beer", pick, key="photo_pick")
-        pid = int(chosen.split(" ")[0].lstrip("#"))
-        up = st.file_uploader("Upload photo", type=["png", "jpg", "jpeg", "webp"],
-                              key="mng_photo")
-        if up and st.button("Save photo"):
-            with st.spinner("Uploading…"):
-                update_photo_url(pid, upload_photo(up))
-            st.success("Photo saved.")
-            st.rerun()
+if "manage" in T:
+    with T["manage"]:
+        if not beers:
+            st.info("Nothing to manage yet.")
+        else:
+            bdf = pd.DataFrame(beers)
+            st.subheader("Add or replace a photo")
+            pick = bdf.apply(lambda r: f'#{int(r["id"])} — {r["name"]}', axis=1)
+            chosen = st.selectbox("Beer", pick, key="photo_pick")
+            pid = int(chosen.split(" ")[0].lstrip("#"))
+            up = st.file_uploader("Upload photo", type=["png", "jpg", "jpeg", "webp"],
+                                  key="mng_photo")
+            if up and st.button("Save photo"):
+                with st.spinner("Uploading…"):
+                    update_photo_url(pid, upload_photo(up))
+                st.success("Photo saved.")
+                st.rerun()
 
-        st.divider()
-        st.subheader("Delete a beer")
-        st.caption("Removes the beer and every taster's rating of it.")
-        dchosen = st.selectbox("Beer to remove", pick, key="del_pick")
-        did = int(dchosen.split(" ")[0].lstrip("#"))
-        if st.button("Delete", type="primary"):
-            delete_beer(did)
-            st.success("Deleted.")
-            st.rerun()
+            st.divider()
+            st.subheader("Delete a beer")
+            st.caption("Removes the beer and every taster's rating of it.")
+            dchosen = st.selectbox("Beer to remove", pick, key="del_pick")
+            did = int(dchosen.split(" ")[0].lstrip("#"))
+            if st.button("Delete", type="primary"):
+                delete_beer(did)
+                st.success("Deleted.")
+                st.rerun()
 
-        st.divider()
-        st.subheader("Export")
-        if ratings:
-            merged = pd.DataFrame(ratings).merge(
-                bdf[["id", "name", "style"]], left_on="beer_id", right_on="id",
-                suffixes=("", "_beer"))
-            st.download_button("Download all ratings as CSV",
-                               data=merged.to_csv(index=False),
-                               file_name="beer_ratings.csv", mime="text/csv")
+            st.divider()
+            st.subheader("Export")
+            if ratings:
+                merged = pd.DataFrame(ratings).merge(
+                    bdf[["id", "name", "style"]], left_on="beer_id", right_on="id",
+                    suffixes=("", "_beer"))
+                st.download_button("Download all ratings as CSV",
+                                   data=merged.to_csv(index=False),
+                                   file_name="beer_ratings.csv", mime="text/csv")
