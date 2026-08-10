@@ -1,0 +1,7 @@
+streamlit>=1.42
+Authlib>=1.3.2
+supabase>=2.0
+pandas>=2.0
+numpy>=1.24
+altair>=5.0
+pillow>=10.0
