@@ -317,7 +317,7 @@ with T["browse"]:
             with st.container(border=True):
                 pcol, dcol = st.columns([1, 2])
                 with pcol:
-                    if row.get("photo_url"):
+                    if pd.notna(row.get("photo_url")):
                         st.image(row["photo_url"], use_container_width=True)
                     else:
                         st.markdown("<div style='height:150px;display:flex;"
