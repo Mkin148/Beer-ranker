@@ -146,14 +146,18 @@ if "flash" in st.session_state:
     st.success(f"🍺 Saved — **{nm}** now averages {av:.2f}/5")
 
 if not logged_in:
-    st.info("👀 You're viewing as a guest. **Log in with Google** (sidebar) to "
-            "add or rate beers.")
+    st.info("👀 You're browsing as a guest — here's the ranking.")
+    if st.button("🍺 Log in to join the beer magic", type="primary"):
+        st.login()
 
-# Build tabs based on who's here.
+# Build tabs based on who's here. Guests get Browse only — it already shows
+# the ranking, so that's enough for someone who just wants to see the site.
 tab_defs = []
 if logged_in:
     tab_defs += [("add", "➕ Add beer"), ("rate", "⭐ Rate beers")]
-tab_defs += [("board", "🏆 Leaderboard"), ("browse", "🖼️ Browse"), ("stats", "📊 Stats")]
+tab_defs += [("browse", "🖼️ Browse")]
+if logged_in:
+    tab_defs += [("board", "🏆 Leaderboard"), ("stats", "📊 Stats")]
 if is_admin:
     tab_defs += [("manage", "🗂️ Manage")]
 
@@ -248,9 +252,9 @@ if "rate" in T:
 
 
 # ---------------------------------------------------------------------------
-# Leaderboard  (public)
+# Leaderboard  (logged-in users)
 # ---------------------------------------------------------------------------
-with T["board"]:
+def render_board():
     rated = lb[lb["n_raters"] > 0].sort_values("avg", ascending=False) \
         if not lb.empty else lb
     if rated.empty:
@@ -297,6 +301,11 @@ with T["board"]:
         unrated = lb[lb["n_raters"] == 0]
         if not unrated.empty:
             st.caption("Not yet rated: " + ", ".join(unrated["name"].tolist()))
+
+
+if "board" in T:
+    with T["board"]:
+        render_board()
 
 
 # ---------------------------------------------------------------------------
@@ -347,9 +356,9 @@ with T["browse"]:
 
 
 # ---------------------------------------------------------------------------
-# Stats  (public)
+# Stats  (logged-in users)
 # ---------------------------------------------------------------------------
-with T["stats"]:
+def render_stats():
     rated = lb[lb["n_raters"] > 0] if not lb.empty else lb
     if rated.empty:
         st.info("Log some ratings and charts will show up here.")
@@ -387,6 +396,11 @@ with T["stats"]:
                          alt.Tooltip("abv:Q", format=".1f"),
                          alt.Tooltip("avg:Q", format=".2f")]
             ), use_container_width=True)
+
+
+if "stats" in T:
+    with T["stats"]:
+        render_stats()
 
 
 # ---------------------------------------------------------------------------
