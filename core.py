@@ -55,8 +55,8 @@ def build_leaderboard(beers, ratings):
 
 def process_image(file, max_side=900):
     """Downscale + re-encode to a small JPEG (bytes)."""
-    from PIL import Image
-    img = Image.open(file).convert("RGB")
+    from PIL import Image, ImageOps
+    img = ImageOps.exif_transpose(Image.open(file)).convert("RGB")
     img.thumbnail((max_side, max_side))
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
