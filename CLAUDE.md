@@ -35,8 +35,8 @@ There is no lint config or test suite in this repo.
 
 - `app.py` — all UI + Supabase/auth wiring. Everything user-facing lives here.
 - `core.py` — **pure logic** (no Streamlit, no network): scoring constants,
-  `build_leaderboard()`, `parse_abv()`, `process_image()`, `star_html()`.
-  Unit-testable offline. Put logic here, not in `app.py`, when practical.
+  `build_leaderboard()`, `process_image()`, `star_html()`. Unit-testable
+  offline. Put logic here, not in `app.py`, when practical.
 - `schema.sql` — Supabase table definitions. Run once in the Supabase SQL editor.
 - `migrate_to_supabase.py` — one-off import from a local SQLite `beers.db` into
   Supabase. Auto-detects the old single-player schema vs the multi-taster one.
@@ -48,7 +48,9 @@ There is no lint config or test suite in this repo.
 
 ## Data model
 
-- `beers`: id, name, style, abv, description, photo_url, created_at.
+- `beers`: id, name, style, origin, abv, description, photo_url, created_at.
+  Added via the Add beer tab with no score attached — it's rated separately
+  from the Rate beers tab.
 - `ratings`: id, beer_id (FK, ON DELETE CASCADE), taster_email, taster_name,
   five score columns, notes, created_at. `UNIQUE(beer_id, taster_email)` — one
   rating per taster per beer, updated via upsert.

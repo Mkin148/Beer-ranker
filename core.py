@@ -4,7 +4,6 @@ scoring/aggregation can be unit-tested offline.
 """
 
 import io
-import re
 
 import numpy as np
 import pandas as pd
@@ -20,16 +19,9 @@ LABELS = {
 SCALE_MAX = 5.0
 
 
-def parse_abv(text):
-    if not text:
-        return None
-    m = re.search(r"(\d+(?:\.\d+)?)\s*%", str(text))
-    return float(m.group(1)) if m else None
-
-
 def build_leaderboard(beers, ratings):
     """
-    beers:   list of dicts (id, name, style, abv, description, photo_url)
+    beers:   list of dicts (id, name, style, origin, abv, description, photo_url)
     ratings: list of dicts (beer_id, taster_email, taster_name, <5 dims>, notes)
     Returns one row per beer with per-dimension averages across tasters,
     n_raters, total (/25) and avg (/5). Unrated beers get NaN dims, n_raters 0.

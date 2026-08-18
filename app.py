@@ -12,7 +12,6 @@ Ranking: a beer's score is the average across every taster.
 Config lives in .streamlit/secrets.toml — see DEPLOY.md. Never commit real secrets.
 """
 
-from datetime import date
 from uuid import uuid4
 
 import altair as alt
@@ -20,7 +19,7 @@ import pandas as pd
 import streamlit as st
 from supabase import create_client
 
-from core import (DIM_KEYS, LABELS, SCALE_MAX, build_leaderboard, parse_abv,
+from core import (DIM_KEYS, LABELS, SCALE_MAX, build_leaderboard,
                   process_image, star_html)
 
 st.set_page_config(page_title="Beer Ranker", page_icon="🍺", layout="wide")
@@ -49,12 +48,11 @@ def fetch_ratings():
     return sb().table("ratings").select("*").execute().data
 
 
-def add_beer(name, style, abv, description, photo_url):
-    row = sb().table("beers").insert({
-        "name": name, "style": style, "abv": abv,
+def add_beer(name, style, origin, abv, description, photo_url):
+    sb().table("beers").insert({
+        "name": name, "style": style, "origin": origin, "abv": abv,
         "description": description, "photo_url": photo_url,
-    }).execute().data
-    return row[0]["id"]
+    }).execute()
 
 
 def upsert_rating(beer_id, email, taster_name, scores, notes):
@@ -143,7 +141,10 @@ st.title("🍺 Beer Ranker")
 if "flash" in st.session_state:
     nm, av = st.session_state.pop("flash")
     st.balloons()
-    st.success(f"🍺 Saved — **{nm}** now averages {av:.2f}/5")
+    if av is None:
+        st.success(f"🍺 **{nm}** added — head to Rate beers to score it.")
+    else:
+        st.success(f"🍺 Saved — **{nm}** now averages {av:.2f}/5")
 
 if not logged_in:
     st.info("👀 You're browsing as a guest — here's the ranking.")
@@ -170,25 +171,17 @@ T = {key: obj for (key, _), obj in zip(tab_defs, _objs)}
 # ---------------------------------------------------------------------------
 if "add" in T:
     with T["add"]:
-        st.subheader("Add a beer and give it your scores")
+        st.subheader("Add a beer")
+        st.caption("Add the details and a photo — score it from the Rate beers tab.")
         name = st.text_input("Beer name *", key="add_name", placeholder="e.g. Petrus Blonde")
-        c1, c2 = st.columns([2, 1])
-        style = c1.text_input("Style / brewery", key="add_style",
-                              placeholder="e.g. Blonde 6.5% Petrus")
-        c2.date_input("Date", value=date.today(), key="add_date")
+        c1, c2, c3 = st.columns(3)
+        style = c1.text_input("Style", key="add_style", placeholder="e.g. Blonde ale")
+        origin = c2.text_input("Origin", key="add_origin", placeholder="e.g. Belgium")
+        abv = c3.number_input("Alcohol % (ABV)", key="add_abv", min_value=0.0,
+                              max_value=100.0, step=0.1, value=None,
+                              placeholder="e.g. 6.5")
         description = st.text_area("Description (shared)", key="add_desc",
                                    placeholder="What is this beer? Colour, vibe…")
-
-        st.markdown(f"**Your scores — each out of {SCALE_MAX:.0f}**")
-        scores = score_inputs("add")
-        avg = sum(scores.values()) / len(DIM_KEYS)
-        pc1, pc2 = st.columns([1, 2])
-        pc1.markdown(f"<div style='font-size:2.2em;font-weight:700;'>{avg:.2f}"
-                     f"<span style='font-size:0.4em;color:#888;'> /5</span></div>",
-                     unsafe_allow_html=True)
-        pc2.markdown(star_html(avg, 28), unsafe_allow_html=True)
-
-        notes = st.text_input("Your note (optional)", key="add_notes")
         photo_file = st.file_uploader("Photo", type=["png", "jpg", "jpeg", "webp"],
                                       key="add_photo")
 
@@ -198,12 +191,11 @@ if "add" in T:
             else:
                 with st.spinner("Saving…"):
                     url = upload_photo(photo_file) if photo_file else None
-                    bid = add_beer(name.strip(), style.strip(), parse_abv(style),
-                                   description.strip(), url)
-                    upsert_rating(bid, EMAIL, NAME, scores, notes.strip())
-                st.session_state["flash"] = (name.strip(), avg)
-                for key in ["add_name", "add_style", "add_desc", "add_notes",
-                            "add_photo"] + [f"add_{k}" for k in DIM_KEYS]:
+                    add_beer(name.strip(), style.strip(), origin.strip(), abv,
+                             description.strip(), url)
+                st.session_state["flash"] = (name.strip(), None)
+                for key in ["add_name", "add_style", "add_origin", "add_abv",
+                            "add_desc", "add_photo"]:
                     st.session_state.pop(key, None)
                 st.rerun()
 
@@ -285,10 +277,11 @@ def render_board():
         board = view.reset_index(drop=True).copy()
         board.insert(0, "Rank", [medals[i] if i < 3 and not query.strip() else str(i + 1)
                                  for i in range(len(board))])
-        display = board[["Rank", "name", "style", "abv", "n_raters"] + DIM_KEYS +
+        display = board[["Rank", "name", "style", "origin", "abv", "n_raters"] + DIM_KEYS +
                         ["total", "avg"]].rename(
-            columns={"name": "Beer", "style": "Style", "abv": "ABV %",
-                     "n_raters": "Tasters", "total": "Total", "avg": "Avg", **LABELS})
+            columns={"name": "Beer", "style": "Style", "origin": "Origin",
+                     "abv": "ABV %", "n_raters": "Tasters", "total": "Total",
+                     "avg": "Avg", **LABELS})
         cfg = {"ABV %": st.column_config.NumberColumn(format="%.1f"),
                "Tasters": st.column_config.NumberColumn(format="%d"),
                "Total": st.column_config.NumberColumn(format="%.2f", help="Out of 25"),
@@ -342,7 +335,12 @@ with T["browse"]:
                                     f"taster(s)</span>", unsafe_allow_html=True)
                     else:
                         st.caption("No ratings yet")
-                    st.caption(row["style"] or "")
+                    meta = [p for p in (row.get("style"), row.get("origin"))
+                            if pd.notna(p) and p]
+                    if pd.notna(row.get("abv")):
+                        meta.append(f"{row['abv']:.1f}% ABV")
+                    if meta:
+                        st.caption(" · ".join(meta))
                     if row.get("description"):
                         st.write(row["description"])
                     if not rdf.empty:
