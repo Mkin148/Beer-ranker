@@ -187,8 +187,14 @@ if "add" in T:
                                       key="add_photo")
 
         if st.button("Add beer 🍺", type="primary", use_container_width=True):
+            dupe = next((b for b in beers
+                        if b["name"].strip().lower() == name.strip().lower()), None)
             if not name.strip():
                 st.error("Give the beer a name first.")
+            elif dupe:
+                st.warning(f"**{dupe['name']}** is already in the list. Give this "
+                          "one a different name, or head to **Rate beers** to "
+                          "score the existing one instead.")
             else:
                 with st.spinner("Saving…"):
                     url = upload_photo(photo_file) if photo_file else None
