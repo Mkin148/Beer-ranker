@@ -1,10 +1,12 @@
 # 🍺 Beer Ranker (deployed edition)
 
-A shared beer-ranking website. Your group signs in with **Google**, each person
-scores beers across five dimensions (Packaging Presentation, Look, Smell, Taste,
-Drinkability — each out of 5), and every beer is ranked by the **average across
-all tasters**. Data and photos live in **Supabase**; hosting is **Streamlit
-Community Cloud**.
+A place for your crew to meet up, drink, and rank beers together. The real goal
+isn't the leaderboard — it's the company and the beer goodness along the way;
+the ranking's just the excuse to gather. Sign in with **Google**, score each
+beer across five dimensions (Packaging Presentation, Look, Smell, Taste,
+Drinkability — each out of 5), and every beer lands on the board ranked by the
+**average across all tasters**. Data and photos live in **Supabase**; hosting
+is **Streamlit Community Cloud**.
 
 ## Set it up
 

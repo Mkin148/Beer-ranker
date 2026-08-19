@@ -117,8 +117,9 @@ with st.sidebar:
         if st.button("Log in with Google", type="primary"):
             st.login()
     st.divider()
-    st.caption("A beer's rank is the average of every taster's scores. "
-               "Five dimensions, each out of 5.")
+    st.caption("Meet up, crack a few open, and rank them together. The real "
+               "goal is good company and soaking in the beer goodness — the "
+               "ranking's just the excuse. Five dimensions, each out of 5.")
 
 
 def score_inputs(prefix, existing=None):
