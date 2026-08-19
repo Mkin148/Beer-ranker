@@ -12,6 +12,7 @@ Ranking: a beer's score is the average across every taster.
 Config lives in .streamlit/secrets.toml — see DEPLOY.md. Never commit real secrets.
 """
 
+import html
 from uuid import uuid4
 
 import altair as alt
@@ -264,11 +265,18 @@ def beer_meta(row):
     return meta
 
 
+esc = html.escape  # user-entered text goes through unsafe_allow_html below
+
+
 with T["browse"]:
     if lb.empty:
         st.info("Nothing to browse yet.")
     else:
         rdf = pd.DataFrame(ratings)
+        if not rdf.empty:
+            for k in DIM_KEYS:
+                rdf[k] = pd.to_numeric(rdf[k], errors="coerce")
+
         selected = st.session_state.get("selected_beer")
         match = lb[lb["beer_id"] == selected] if selected is not None else lb.iloc[0:0]
 
@@ -278,42 +286,72 @@ with T["browse"]:
                 st.session_state.pop("selected_beer", None)
                 st.rerun()
 
-            pcol, dcol = st.columns([1, 2])
-            with pcol:
-                photo_or_placeholder(row.get("photo_url"), height=220)
-            with dcol:
-                st.markdown(f"## {row['name']}")
-                meta = beer_meta(row)
-                if meta:
-                    st.caption(" · ".join(meta))
-                if row["n_raters"] > 0:
-                    st.markdown(star_html(row["avg"], 24) +
-                                f" &nbsp;<b>{row['avg']:.2f}/5</b> "
-                                f"<span style='color:#888;'>· {int(row['n_raters'])} "
-                                f"taster(s)</span>", unsafe_allow_html=True)
-                else:
-                    st.caption("No ratings yet")
-                desc = row.get("description")
-                if pd.notna(desc) and desc:
-                    st.write(desc)
+            _, pmid, _ = st.columns([1, 2, 1])
+            with pmid:
+                photo_or_placeholder(row.get("photo_url"), height=260)
+
+            meta = beer_meta(row)
+            meta_html = (f"<div style='color:#888;'>{esc(' · '.join(str(m) for m in meta))}"
+                        f"</div>" if meta else "")
+            if row["n_raters"] > 0:
+                score_html = (star_html(row["avg"], 26) +
+                             f" <b>{row['avg']:.2f}/5</b> "
+                             f"<span style='color:#888;'>· {int(row['n_raters'])} "
+                             f"taster(s)</span>")
+            else:
+                score_html = "<span style='color:#888;'>No ratings yet</span>"
+            st.markdown(
+                f"<div style='text-align:center;'>"
+                f"<h2 style='margin-bottom:2px;'>{esc(row['name'])}</h2>"
+                f"{meta_html}"
+                f"<div style='margin-top:8px;'>{score_html}</div>"
+                f"</div>", unsafe_allow_html=True)
+
+            desc = row.get("description")
+            if pd.notna(desc) and desc:
+                st.markdown(f"<p style='text-align:center;color:#444;max-width:420px;"
+                            f"margin:14px auto;'>{esc(desc)}</p>", unsafe_allow_html=True)
 
             if row["n_raters"] > 0:
-                st.markdown(f"**Score breakdown — out of {SCALE_MAX:.0f}**")
-                dims_df = pd.DataFrame({"Dimension": [LABELS[k] for k in DIM_KEYS],
-                                        "Score": [row[k] for k in DIM_KEYS]})
-                st.dataframe(dims_df, use_container_width=True, hide_index=True,
-                            column_config={"Score": st.column_config.ProgressColumn(
-                                format="%.2f", min_value=0, max_value=SCALE_MAX)})
-                st.caption(f"Total: {row['total']:.2f} / 25")
+                st.write("")
+                st.markdown("<div style='text-align:center;font-weight:600;'>"
+                            "Score breakdown</div>", unsafe_allow_html=True)
+                bars = ""
+                for k in DIM_KEYS:
+                    val = row[k]
+                    pct = max(0.0, min(100.0, val / SCALE_MAX * 100))
+                    bars += (
+                        f"<div style='max-width:320px;margin:8px auto;'>"
+                        f"<div style='display:flex;justify-content:space-between;"
+                        f"font-size:0.9em;'><span>{LABELS[k]}</span>"
+                        f"<span><b>{val:.2f}</b></span></div>"
+                        f"<div style='background:#eee;border-radius:6px;height:8px;"
+                        f"overflow:hidden;'><div style='background:#f5a623;width:{pct}%;"
+                        f"height:100%;'></div></div></div>")
+                st.markdown(bars, unsafe_allow_html=True)
+                st.markdown(f"<div style='text-align:center;color:#888;'>"
+                            f"Total {row['total']:.2f} / 25</div>", unsafe_allow_html=True)
 
             if not rdf.empty:
                 mine = rdf[rdf["beer_id"] == row["beer_id"]]
                 if not mine.empty:
-                    st.markdown(f"**Individual scores ({mine['taster_email'].nunique()})**")
-                    cols = ["taster_name"] + DIM_KEYS + ["notes"]
-                    show = mine[cols].rename(columns={
-                        "taster_name": "Taster", "notes": "Note", **LABELS})
-                    st.dataframe(show, use_container_width=True, hide_index=True)
+                    st.write("")
+                    st.markdown(f"<div style='text-align:center;font-weight:600;'>"
+                                f"Individual scores ({mine['taster_email'].nunique()})"
+                                f"</div>", unsafe_allow_html=True)
+                    cards = ""
+                    for _, tr in mine.sort_values("taster_name").iterrows():
+                        t_avg = sum(tr[k] for k in DIM_KEYS) / len(DIM_KEYS)
+                        note = tr.get("notes")
+                        note_html = (f"<div style='color:#888;font-size:0.85em;"
+                                     f"font-style:italic;'>“{esc(note)}”</div>"
+                                     if pd.notna(note) and note else "")
+                        cards += (
+                            f"<div style='max-width:320px;margin:10px auto 0;"
+                            f"text-align:center;border-top:1px solid #eee;"
+                            f"padding-top:8px;'><b>{esc(tr['taster_name'])}</b><br>"
+                            f"{star_html(t_avg, 16)} {t_avg:.2f}/5{note_html}</div>")
+                    st.markdown(cards, unsafe_allow_html=True)
 
         else:
             rated = lb[lb["n_raters"] > 0].sort_values("avg", ascending=False) \
@@ -328,11 +366,28 @@ with T["browse"]:
                         f"<div style='text-align:center;border:2px solid {border[i]};"
                         f"border-radius:12px;padding:12px 6px;'>"
                         f"<div style='font-size:2em;'>{medals[i]}</div>"
-                        f"<div style='font-weight:700;'>{r['name']}</div>"
+                        f"<div style='font-weight:700;'>{esc(r['name'])}</div>"
                         f"<div>{star_html(r['avg'], 16)}</div>"
                         f"<div style='color:#888;'>{r['avg']:.2f}/5 · {int(r['n_raters'])} 🧑"
                         f"</div></div>", unsafe_allow_html=True)
                 st.write("")
+
+            # Overlay each photocard's (invisible) button on top of its photo,
+            # so clicking the photo itself opens the beer — st.image has no
+            # click handler, so this is done with a CSS overlay instead. The
+            # button stays in the DOM (opacity, not display:none) so it's
+            # still reachable by keyboard and screen readers.
+            st.markdown("""
+                <style>
+                div[class*="st-key-photocard_"] { position: relative; cursor: pointer; }
+                div[class*="st-key-photocard_"] .stButton {
+                    position: absolute; inset: 0; z-index: 1; margin: 0;
+                }
+                div[class*="st-key-photocard_"] .stButton button {
+                    width: 100%; height: 100%; opacity: 0; border: 0; padding: 0;
+                }
+                </style>
+            """, unsafe_allow_html=True)
 
             search = st.text_input("🔎 Search", key="browse_search", placeholder="name or style…")
             view = lb.sort_values("avg", ascending=False, na_position="last")
@@ -344,11 +399,13 @@ with T["browse"]:
                 with st.container(border=True):
                     pcol, dcol = st.columns([1, 2])
                     with pcol:
-                        photo_or_placeholder(r.get("photo_url"))
-                        if st.button("🔍 View details", key=f"view_{r['beer_id']}",
-                                    use_container_width=True):
-                            st.session_state["selected_beer"] = int(r["beer_id"])
-                            st.rerun()
+                        with st.container(key=f"photocard_{int(r['beer_id'])}"):
+                            photo_or_placeholder(r.get("photo_url"))
+                            if st.button(f"View {r['name']} details",
+                                        key=f"view_{r['beer_id']}"):
+                                st.session_state["selected_beer"] = int(r["beer_id"])
+                                st.rerun()
+                        st.caption("Tap photo for details")
                     with dcol:
                         st.markdown(f"### {r['name']}")
                         if r["n_raters"] > 0:
