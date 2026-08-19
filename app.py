@@ -158,7 +158,7 @@ if logged_in:
     tab_defs += [("add", "➕ Add beer"), ("rate", "⭐ Rate beers")]
 tab_defs += [("browse", "🖼️ Browse")]
 if logged_in:
-    tab_defs += [("board", "🏆 Leaderboard"), ("stats", "📊 Stats")]
+    tab_defs += [("stats", "📊 Stats")]
 if is_admin:
     tab_defs += [("manage", "🗂️ Manage")]
 
@@ -244,113 +244,126 @@ if "rate" in T:
 
 
 # ---------------------------------------------------------------------------
-# Leaderboard  (logged-in users)
+# Browse & Leaderboard  (public) — one view: beers ranked by score with
+# photos; click a beer's photo to open its full score breakdown.
 # ---------------------------------------------------------------------------
-def render_board():
-    rated = lb[lb["n_raters"] > 0].sort_values("avg", ascending=False) \
-        if not lb.empty else lb
-    if rated.empty:
-        st.info("No ratings yet.")
+def photo_or_placeholder(url, height=150):
+    if pd.notna(url):
+        st.image(url, use_container_width=True)
     else:
-        rated = rated.reset_index(drop=True)
-        medals = ["🥇", "🥈", "🥉"]
-        border = ["#f5a623", "#b8b8b8", "#cd7f32"]
-        pcols = st.columns(min(3, len(rated)))
-        for i, col in enumerate(pcols):
-            r = rated.iloc[i]
-            col.markdown(
-                f"<div style='text-align:center;border:2px solid {border[i]};"
-                f"border-radius:12px;padding:12px 6px;'>"
-                f"<div style='font-size:2em;'>{medals[i]}</div>"
-                f"<div style='font-weight:700;'>{r['name']}</div>"
-                f"<div>{star_html(r['avg'], 16)}</div>"
-                f"<div style='color:#888;'>{r['avg']:.2f}/5 · {int(r['n_raters'])} 🧑"
-                f"</div></div>", unsafe_allow_html=True)
-        st.write("")
-
-        query = st.text_input("🔎 Search", key="board_search", placeholder="name or style…")
-        view = rated
-        if query.strip():
-            q = query.lower()
-            view = rated[rated["name"].str.lower().str.contains(q, na=False) |
-                         rated["style"].fillna("").str.lower().str.contains(q, na=False)]
-        board = view.reset_index(drop=True).copy()
-        board.insert(0, "Rank", [medals[i] if i < 3 and not query.strip() else str(i + 1)
-                                 for i in range(len(board))])
-        display = board[["Rank", "name", "style", "origin", "abv", "n_raters"] + DIM_KEYS +
-                        ["total", "avg"]].rename(
-            columns={"name": "Beer", "style": "Style", "origin": "Origin",
-                     "abv": "ABV %", "n_raters": "Tasters", "total": "Total",
-                     "avg": "Avg", **LABELS})
-        cfg = {"ABV %": st.column_config.NumberColumn(format="%.1f"),
-               "Tasters": st.column_config.NumberColumn(format="%d"),
-               "Total": st.column_config.NumberColumn(format="%.2f", help="Out of 25"),
-               "Avg": st.column_config.ProgressColumn(format="%.2f", min_value=0,
-                                                      max_value=SCALE_MAX, help="Out of 5")}
-        for k in DIM_KEYS:
-            cfg[LABELS[k]] = st.column_config.NumberColumn(format="%.2f")
-        st.dataframe(display, use_container_width=True, hide_index=True, column_config=cfg)
-
-        unrated = lb[lb["n_raters"] == 0]
-        if not unrated.empty:
-            st.caption("Not yet rated: " + ", ".join(unrated["name"].tolist()))
+        st.markdown(f"<div style='height:{height}px;display:flex;"
+                    "align-items:center;justify-content:center;"
+                    "border:1px dashed #bbb;border-radius:8px;color:#999;'>"
+                    "No photo</div>", unsafe_allow_html=True)
 
 
-if "board" in T:
-    with T["board"]:
-        render_board()
+def beer_meta(row):
+    meta = [p for p in (row.get("style"), row.get("origin")) if pd.notna(p) and p]
+    if pd.notna(row.get("abv")):
+        meta.append(f"{row['abv']:.1f}% ABV")
+    return meta
 
 
-# ---------------------------------------------------------------------------
-# Browse  (public)
-# ---------------------------------------------------------------------------
 with T["browse"]:
     if lb.empty:
         st.info("Nothing to browse yet.")
     else:
         rdf = pd.DataFrame(ratings)
-        search = st.text_input("🔎 Search", key="browse_search", placeholder="name or style…")
-        view = lb.sort_values("avg", ascending=False, na_position="last")
-        if search.strip():
-            q = search.lower()
-            view = view[view["name"].str.lower().str.contains(q, na=False) |
-                        view["style"].fillna("").str.lower().str.contains(q, na=False)]
-        for _, row in view.iterrows():
-            with st.container(border=True):
-                pcol, dcol = st.columns([1, 2])
-                with pcol:
-                    if pd.notna(row.get("photo_url")):
-                        st.image(row["photo_url"], use_container_width=True)
-                    else:
-                        st.markdown("<div style='height:150px;display:flex;"
-                                    "align-items:center;justify-content:center;"
-                                    "border:1px dashed #bbb;border-radius:8px;color:#999;'>"
-                                    "No photo</div>", unsafe_allow_html=True)
-                with dcol:
-                    st.markdown(f"### {row['name']}")
-                    if row["n_raters"] > 0:
-                        st.markdown(star_html(row["avg"], 20) +
-                                    f" &nbsp;<b>{row['avg']:.2f}/5</b> "
-                                    f"<span style='color:#888;'>· {int(row['n_raters'])} "
-                                    f"taster(s)</span>", unsafe_allow_html=True)
-                    else:
-                        st.caption("No ratings yet")
-                    meta = [p for p in (row.get("style"), row.get("origin"))
-                            if pd.notna(p) and p]
-                    if pd.notna(row.get("abv")):
-                        meta.append(f"{row['abv']:.1f}% ABV")
-                    if meta:
-                        st.caption(" · ".join(meta))
-                    if row.get("description"):
-                        st.write(row["description"])
-                    if not rdf.empty:
-                        mine = rdf[rdf["beer_id"] == row["beer_id"]]
-                        if not mine.empty:
-                            with st.expander(f"Individual scores ({mine['taster_email'].nunique()})"):
-                                cols = ["taster_name"] + DIM_KEYS + ["notes"]
-                                show = mine[cols].rename(columns={
-                                    "taster_name": "Taster", "notes": "Note", **LABELS})
-                                st.dataframe(show, use_container_width=True, hide_index=True)
+        selected = st.session_state.get("selected_beer")
+        match = lb[lb["beer_id"] == selected] if selected is not None else lb.iloc[0:0]
+
+        if not match.empty:
+            row = match.iloc[0]
+            if st.button("← Back to all beers"):
+                st.session_state.pop("selected_beer", None)
+                st.rerun()
+
+            pcol, dcol = st.columns([1, 2])
+            with pcol:
+                photo_or_placeholder(row.get("photo_url"), height=220)
+            with dcol:
+                st.markdown(f"## {row['name']}")
+                meta = beer_meta(row)
+                if meta:
+                    st.caption(" · ".join(meta))
+                if row["n_raters"] > 0:
+                    st.markdown(star_html(row["avg"], 24) +
+                                f" &nbsp;<b>{row['avg']:.2f}/5</b> "
+                                f"<span style='color:#888;'>· {int(row['n_raters'])} "
+                                f"taster(s)</span>", unsafe_allow_html=True)
+                else:
+                    st.caption("No ratings yet")
+                desc = row.get("description")
+                if pd.notna(desc) and desc:
+                    st.write(desc)
+
+            if row["n_raters"] > 0:
+                st.markdown(f"**Score breakdown — out of {SCALE_MAX:.0f}**")
+                dims_df = pd.DataFrame({"Dimension": [LABELS[k] for k in DIM_KEYS],
+                                        "Score": [row[k] for k in DIM_KEYS]})
+                st.dataframe(dims_df, use_container_width=True, hide_index=True,
+                            column_config={"Score": st.column_config.ProgressColumn(
+                                format="%.2f", min_value=0, max_value=SCALE_MAX)})
+                st.caption(f"Total: {row['total']:.2f} / 25")
+
+            if not rdf.empty:
+                mine = rdf[rdf["beer_id"] == row["beer_id"]]
+                if not mine.empty:
+                    st.markdown(f"**Individual scores ({mine['taster_email'].nunique()})**")
+                    cols = ["taster_name"] + DIM_KEYS + ["notes"]
+                    show = mine[cols].rename(columns={
+                        "taster_name": "Taster", "notes": "Note", **LABELS})
+                    st.dataframe(show, use_container_width=True, hide_index=True)
+
+        else:
+            rated = lb[lb["n_raters"] > 0].sort_values("avg", ascending=False) \
+                .reset_index(drop=True)
+            if not rated.empty:
+                medals = ["🥇", "🥈", "🥉"]
+                border = ["#f5a623", "#b8b8b8", "#cd7f32"]
+                pcols = st.columns(min(3, len(rated)))
+                for i, col in enumerate(pcols):
+                    r = rated.iloc[i]
+                    col.markdown(
+                        f"<div style='text-align:center;border:2px solid {border[i]};"
+                        f"border-radius:12px;padding:12px 6px;'>"
+                        f"<div style='font-size:2em;'>{medals[i]}</div>"
+                        f"<div style='font-weight:700;'>{r['name']}</div>"
+                        f"<div>{star_html(r['avg'], 16)}</div>"
+                        f"<div style='color:#888;'>{r['avg']:.2f}/5 · {int(r['n_raters'])} 🧑"
+                        f"</div></div>", unsafe_allow_html=True)
+                st.write("")
+
+            search = st.text_input("🔎 Search", key="browse_search", placeholder="name or style…")
+            view = lb.sort_values("avg", ascending=False, na_position="last")
+            if search.strip():
+                q = search.lower()
+                view = view[view["name"].str.lower().str.contains(q, na=False) |
+                            view["style"].fillna("").str.lower().str.contains(q, na=False)]
+            for _, r in view.iterrows():
+                with st.container(border=True):
+                    pcol, dcol = st.columns([1, 2])
+                    with pcol:
+                        photo_or_placeholder(r.get("photo_url"))
+                        if st.button("🔍 View details", key=f"view_{r['beer_id']}",
+                                    use_container_width=True):
+                            st.session_state["selected_beer"] = int(r["beer_id"])
+                            st.rerun()
+                    with dcol:
+                        st.markdown(f"### {r['name']}")
+                        if r["n_raters"] > 0:
+                            st.markdown(star_html(r["avg"], 20) +
+                                        f" &nbsp;<b>{r['avg']:.2f}/5</b> "
+                                        f"<span style='color:#888;'>· {int(r['n_raters'])} "
+                                        f"taster(s)</span>", unsafe_allow_html=True)
+                        else:
+                            st.caption("No ratings yet")
+                        meta = beer_meta(r)
+                        if meta:
+                            st.caption(" · ".join(meta))
+                        desc = r.get("description")
+                        if pd.notna(desc) and desc:
+                            st.write(desc)
 
 
 # ---------------------------------------------------------------------------

@@ -25,12 +25,13 @@ Bring your existing beers over once with `python migrate_to_supabase.py`.
 
 - **Log in with Google** → your account is your taster identity, so scores stay
   separate automatically.
-- **Add beer** enters a beer once (name, style, photo, description) plus your
-  scores; **Rate beers** lets anyone else score it. Re-scoring replaces your own
-  previous scores.
-- **Leaderboard** ranks by the group average with a podium and taster counts;
-  **Browse** shows each beer's photo, description, and every person's scores;
-  **Stats** includes a "who scores harshest" comparison.
+- **Add beer** enters a beer once (name, style, origin, ABV, photo,
+  description) with no score attached; **Rate beers** is where you (and
+  everyone else) score it. Re-scoring replaces your own previous scores.
+- **Browse** is the leaderboard and photo gallery combined: a podium, a
+  ranked list of every beer, and a click-through per beer for its full score
+  breakdown and every taster's individual scores.
+- **Stats** includes a "who scores harshest" comparison.
 
 ## Files
 
