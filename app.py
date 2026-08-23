@@ -208,14 +208,16 @@ if not logged_in:
 
 # Build tabs based on who's here. Guests get Browse only — it already shows
 # the ranking, so that's enough for someone who just wants to see the site.
+# Regular logged-in users (testers) can rate and browse; Add beer, Stats, and
+# Manage are admin-only.
 tab_defs = []
-if logged_in:
-    tab_defs += [("add", "➕ Add beer"), ("rate", "⭐ Rate beers")]
-tab_defs += [("browse", "🖼️ Browse")]
-if logged_in:
-    tab_defs += [("stats", "📊 Stats")]
 if is_admin:
-    tab_defs += [("manage", "🗂️ Manage")]
+    tab_defs += [("add", "➕ Add beer")]
+if logged_in:
+    tab_defs += [("rate", "⭐ Rate beers")]
+tab_defs += [("browse", "🖼️ Browse")]
+if is_admin:
+    tab_defs += [("stats", "📊 Stats"), ("manage", "🗂️ Manage")]
 
 _objs = st.tabs([label for _, label in tab_defs])
 T = {key: obj for (key, _), obj in zip(tab_defs, _objs)}

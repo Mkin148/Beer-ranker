@@ -64,8 +64,9 @@ There is no lint config or test suite in this repo.
   merged into one view (podium + ranked list; click a beer to see its full
   score breakdown), so it's enough for someone who just wants to see the
   site. A "Log in to join the beer magic" button sits above the tabs.
-- **Login required:** Add beer, Rate beers, Stats.
-- **Admins only:** Manage (delete/photo). Admins come from secrets:
+- **Login required:** Rate beers.
+- **Admins only:** Add beer, Stats, Manage (delete/photo). Regular logged-in
+  users (testers) can only rate and browse. Admins come from secrets:
   `[admin] emails = ["..."]`. If that key is absent, every logged-in user is an
   admin (avoids lockout). Only test users can log in until the Google OAuth
   consent screen is published.
