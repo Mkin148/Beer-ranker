@@ -1,4 +1,4 @@
-# 🍺 Beer Ranker — deployment guide (Supabase + Google login + Streamlit Cloud)
+# 🍺 Meet and Drink — deployment guide (Supabase + Google login + Streamlit Cloud)
 
 This turns the app into a shared, always-on website your group signs into with
 Google. Data lives in Supabase (Postgres + photo storage); the app is hosted

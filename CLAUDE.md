@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A small **Streamlit** web app where a private group ranks beers. Each taster
-scores a beer on five dimensions (each out of 5); a beer's rank is the **average
-across all tasters**. Live at `beerranker.streamlit.app`.
+**Meet and Drink** — a small **Streamlit** web app where a private group ranks
+beers. Each taster scores a beer on five dimensions (each out of 5); a beer's
+rank is the **average across all tasters**. Live at `beerranker.streamlit.app`
+(the app's display name has changed but the Streamlit Cloud subdomain has
+not — renaming it is a separate step, see Gotchas).
 
 ## Stack
 
@@ -101,6 +103,11 @@ in both places, never in git.
 - **`st.user.is_logged_in` only works in the running app**, not on bare import —
   that's expected, not an error.
 - **Don't run the migration twice** — it re-inserts and creates duplicates.
+- **Renaming the Streamlit Cloud subdomain** (e.g. off `beerranker.streamlit.app`
+  to match the "Meet and Drink" name) is a separate step from renaming the
+  in-app text — it breaks the existing `redirect_uri` everywhere it's
+  registered (Streamlit secrets, Google OAuth client), so update all three
+  together (see the `redirect_uri` gotcha above) if it's ever done.
 
 ## Conventions
 

@@ -1,5 +1,5 @@
 """
-Pure logic for Beer Ranker — no Streamlit, no network. Kept separate so the
+Pure logic for Meet and Drink — no Streamlit, no network. Kept separate so the
 scoring/aggregation can be unit-tested offline.
 """
 

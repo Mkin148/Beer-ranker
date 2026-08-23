@@ -1,5 +1,5 @@
 """
-🍺 Beer Ranker — deployed edition (Google login + Supabase).
+🍺 Meet and Drink — deployed edition (Google login + Supabase).
 
 Public read / private write:
   - Anyone can view the Leaderboard, Browse, and Stats (no login).
@@ -23,7 +23,7 @@ from supabase import create_client
 from core import (DIM_KEYS, LABELS, SCALE_MAX, build_leaderboard,
                   process_image, star_html)
 
-st.set_page_config(page_title="Beer Ranker", page_icon="🍺", layout="wide")
+st.set_page_config(page_title="Meet and Drink", page_icon="🍺", layout="wide")
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ _admins = admin_emails()
 is_admin = logged_in and (not _admins or EMAIL.lower() in _admins)
 
 with st.sidebar:
-    st.header("🍺 Beer Ranker")
+    st.header("🍺 Meet and Drink")
     if logged_in:
         st.caption(f"Signed in as **{NAME}**")
         if st.button("Log out"):
@@ -191,7 +191,7 @@ beers = fetch_beers()
 ratings = fetch_ratings()
 lb = build_leaderboard(beers, ratings)
 
-st.title("🍺 Beer Ranker")
+st.title("🍺 Meet and Drink")
 
 if "flash" in st.session_state:
     nm, av = st.session_state.pop("flash")

@@ -1,4 +1,4 @@
-# 🍺 Beer Ranker (deployed edition)
+# 🍺 Meet and Drink (deployed edition)
 
 A place for your crew to meet up, drink, and rank beers together. The real goal
 isn't the leaderboard — it's the company and the beer goodness along the way;

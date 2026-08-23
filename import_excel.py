@@ -1,5 +1,5 @@
 """
-Seed the Beer Ranker database from the original Excel spreadsheet.
+Seed the Meet and Drink database from the original Excel spreadsheet.
 
 Excel column -> app field:
     A Beer name          -> name
