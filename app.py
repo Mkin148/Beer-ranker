@@ -549,27 +549,70 @@ if "manage" in T:
             st.info("Nothing to manage yet.")
         else:
             bdf = pd.DataFrame(beers)
-            st.subheader("Add or replace a photo")
-            pick = bdf.apply(lambda r: f'#{int(r["id"])} — {r["name"]}', axis=1)
-            chosen = st.selectbox("Beer", pick, key="photo_pick")
-            pid = int(chosen.split(" ")[0].lstrip("#"))
-            up = st.file_uploader("Upload photo", type=["png", "jpg", "jpeg", "webp"],
-                                  key="mng_photo")
-            if up and st.button("Save photo"):
-                with st.spinner("Uploading…"):
-                    update_photo_url(pid, upload_photo(up))
-                st.success("Photo saved.")
-                st.rerun()
+            picked_id = st.session_state.get("manage_beer_id")
+            picked = bdf[bdf["id"] == picked_id] if picked_id is not None else bdf.iloc[0:0]
 
-            st.divider()
-            st.subheader("Delete a beer")
-            st.caption("Removes the beer and every taster's rating of it.")
-            dchosen = st.selectbox("Beer to remove", pick, key="del_pick")
-            did = int(dchosen.split(" ")[0].lstrip("#"))
-            if st.button("Delete", type="primary"):
-                delete_beer(did)
-                st.success("Deleted.")
-                st.rerun()
+            if picked.empty:
+                st.subheader("Manage beers")
+                st.caption("Tap a beer's photo to edit its photo or delete it.")
+                clickable_photo_css("managecard")
+                search = st.text_input("🔎 Search", key="manage_search",
+                                       placeholder="name or style…", autocomplete="off")
+                view = bdf.sort_values("name")
+                if search.strip():
+                    q = search.lower()
+                    view = view[view["name"].str.lower().str.contains(q, na=False) |
+                                view["style"].fillna("").str.lower().str.contains(q, na=False)]
+                for _, b in view.iterrows():
+                    with st.container(border=True):
+                        pcol, dcol = st.columns([1, 2])
+                        with pcol:
+                            with st.container(key=f"managecard_{int(b['id'])}"):
+                                photo_or_placeholder(b.get("photo_url"))
+                                if st.button(f"Edit {b['name']}", key=f"editpick_{b['id']}"):
+                                    st.session_state["manage_beer_id"] = int(b["id"])
+                                    st.rerun()
+                            st.caption("Tap photo to edit")
+                        with dcol:
+                            st.markdown(f"### {b['name']}")
+                            meta = beer_meta(b)
+                            if meta:
+                                st.caption(" · ".join(meta))
+            else:
+                brow = picked.iloc[0]
+                bid = int(brow["id"])
+                if st.button("← Choose a different beer", key="manage_back_top"):
+                    st.session_state.pop("manage_beer_id", None)
+                    st.rerun()
+
+                _, pmid, _ = st.columns([1, 2, 1])
+                with pmid:
+                    photo_or_placeholder(brow.get("photo_url"), height=220)
+                st.markdown(f"<div style='text-align:center;'><h3 style='margin-bottom:4px;'>"
+                            f"{esc(brow['name'])}</h3></div>", unsafe_allow_html=True)
+
+                st.subheader("Replace photo")
+                up = st.file_uploader("Upload photo", type=["png", "jpg", "jpeg", "webp"],
+                                      key="mng_photo")
+                if up and st.button("Save photo"):
+                    with st.spinner("Uploading…"):
+                        update_photo_url(bid, upload_photo(up))
+                    st.success("Photo saved.")
+                    st.rerun()
+
+                st.divider()
+                st.subheader("Delete this beer")
+                st.caption("Removes the beer and every taster's rating of it.")
+                if st.button("Delete", type="primary"):
+                    delete_beer(bid)
+                    st.session_state.pop("manage_beer_id", None)
+                    st.success("Deleted.")
+                    st.rerun()
+
+                st.divider()
+                if st.button("← Choose a different beer", key="manage_back_bottom"):
+                    st.session_state.pop("manage_beer_id", None)
+                    st.rerun()
 
             st.divider()
             st.subheader("Export")
