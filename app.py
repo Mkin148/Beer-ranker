@@ -156,15 +156,29 @@ def clickable_photo_css(key_prefix):
     click target for the (invisible) button rendered right after it — st.image
     has no click handler, so this overlays the button on top of the photo.
     The button stays in the DOM (opacity, not display:none) so it's still
-    reachable by keyboard and screen readers."""
+    reachable by keyboard and screen readers.
+
+    Streamlit puts `position: relative` on the button's own element-container
+    div (one level inside our keyed container), so that div — not ours — ends
+    up as the absolute-positioned button's containing block, and it collapses
+    to the button's own tiny content size (`width: fit-content` is set on it
+    by Streamlit too). Fix: pin *that* wrapper (`> div:last-child`) to fill
+    our keyed container, forcing its width instead of just the button inside
+    it — confirmed by inspecting the live DOM, since neither issue is visible
+    from the CSS alone."""
     st.markdown(f"""
         <style>
         div[class*="st-key-{key_prefix}_"] {{ position: relative; cursor: pointer; }}
-        div[class*="st-key-{key_prefix}_"] .stButton {{
-            position: absolute; inset: 0; z-index: 1; margin: 0;
+        div[class*="st-key-{key_prefix}_"] > div:last-child {{
+            position: absolute !important; inset: 0 !important; z-index: 1 !important;
+            width: 100% !important; height: 100% !important;
         }}
-        div[class*="st-key-{key_prefix}_"] .stButton button {{
-            width: 100%; height: 100%; opacity: 0; border: 0; padding: 0;
+        div[class*="st-key-{key_prefix}_"] > div:last-child .stButton,
+        div[class*="st-key-{key_prefix}_"] > div:last-child .stButton button {{
+            width: 100% !important; height: 100% !important; margin: 0 !important;
+        }}
+        div[class*="st-key-{key_prefix}_"] > div:last-child .stButton button {{
+            opacity: 0; border: 0; padding: 0;
         }}
         </style>
     """, unsafe_allow_html=True)
