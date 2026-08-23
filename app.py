@@ -305,7 +305,7 @@ if "rate" in T:
             else:
                 brow = picked.iloc[0]
                 bid = int(brow["id"])
-                if st.button("← Choose a different beer"):
+                if st.button("← Choose a different beer", key="back_top"):
                     st.session_state.pop("rate_beer_id", None)
                     st.rerun()
 
@@ -341,6 +341,10 @@ if "rate" in T:
                     for k in DIM_KEYS:
                         st.session_state.pop(f"rate_{k}", None)
                     st.session_state.pop("rate_notes", None)
+                    st.rerun()
+
+                if st.button("← Choose a different beer", key="back_bottom"):
+                    st.session_state.pop("rate_beer_id", None)
                     st.rerun()
 
 
