@@ -131,6 +131,45 @@ def score_inputs(prefix, existing=None):
     return out
 
 
+def photo_or_placeholder(url, height=150):
+    if pd.notna(url):
+        st.image(url, use_container_width=True)
+    else:
+        st.markdown(f"<div style='height:{height}px;display:flex;"
+                    "align-items:center;justify-content:center;"
+                    "border:1px dashed #bbb;border-radius:8px;color:#999;'>"
+                    "No photo</div>", unsafe_allow_html=True)
+
+
+def beer_meta(row):
+    meta = [p for p in (row.get("style"), row.get("origin")) if pd.notna(p) and p]
+    if pd.notna(row.get("abv")):
+        meta.append(f"{row['abv']:.1f}% ABV")
+    return meta
+
+
+esc = html.escape  # user-entered text goes through unsafe_allow_html below
+
+
+def clickable_photo_css(key_prefix):
+    """CSS to make a photo inside a st.container(key=f"{key_prefix}_...") the
+    click target for the (invisible) button rendered right after it — st.image
+    has no click handler, so this overlays the button on top of the photo.
+    The button stays in the DOM (opacity, not display:none) so it's still
+    reachable by keyboard and screen readers."""
+    st.markdown(f"""
+        <style>
+        div[class*="st-key-{key_prefix}_"] {{ position: relative; cursor: pointer; }}
+        div[class*="st-key-{key_prefix}_"] .stButton {{
+            position: absolute; inset: 0; z-index: 1; margin: 0;
+        }}
+        div[class*="st-key-{key_prefix}_"] .stButton button {{
+            width: 100%; height: 100%; opacity: 0; border: 0; padding: 0;
+        }}
+        </style>
+    """, unsafe_allow_html=True)
+
+
 # ---------------------------------------------------------------------------
 # Load data once per run (reads are open to everyone)
 # ---------------------------------------------------------------------------
@@ -175,10 +214,13 @@ if "add" in T:
     with T["add"]:
         st.subheader("Add a beer")
         st.caption("Add the details and a photo — score it from the Rate beers tab.")
-        name = st.text_input("Beer name *", key="add_name", placeholder="e.g. Petrus Blonde")
+        name = st.text_input("Beer name *", key="add_name", placeholder="e.g. Petrus Blonde",
+                             autocomplete="off")
         c1, c2, c3 = st.columns(3)
-        style = c1.text_input("Style", key="add_style", placeholder="e.g. Blonde ale")
-        origin = c2.text_input("Origin", key="add_origin", placeholder="e.g. Belgium")
+        style = c1.text_input("Style", key="add_style", placeholder="e.g. Blonde ale",
+                              autocomplete="off")
+        origin = c2.text_input("Origin", key="add_origin", placeholder="e.g. Belgium",
+                               autocomplete="off")
         abv = c3.number_input("Alcohol % (ABV)", key="add_abv", min_value=0.0,
                               max_value=100.0, step=0.1, value=None,
                               placeholder="e.g. 6.5")
@@ -213,68 +255,85 @@ if "add" in T:
 # ---------------------------------------------------------------------------
 if "rate" in T:
     with T["rate"]:
-        st.subheader("Rate an existing beer")
+        st.subheader("Rate a beer")
         if not beers:
             st.info("No beers yet — add one first.")
         else:
             bdf = pd.DataFrame(beers)
-            bdf["label"] = bdf.apply(lambda r: f'{r["name"]} — {r["style"] or ""}', axis=1)
-            choice = st.selectbox("Beer", bdf["label"], key="rate_pick")
-            brow = bdf[bdf["label"] == choice].iloc[0]
-            bid = int(brow["id"])
+            picked_id = st.session_state.get("rate_beer_id")
+            picked = bdf[bdf["id"] == picked_id] if picked_id is not None else bdf.iloc[0:0]
 
-            existing = get_rating(bid, EMAIL)
-            if existing:
-                st.caption("You've rated this before — sliders show your last scores.")
-            grow = lb[lb["beer_id"] == bid].iloc[0]
-            if grow["n_raters"] > 0:
-                st.markdown(f"Group so far: {star_html(grow['avg'], 16)} "
-                            f"**{grow['avg']:.2f}/5** from {int(grow['n_raters'])} taster(s)",
+            if picked.empty:
+                st.caption("Tap a beer's photo to start rating it.")
+                clickable_photo_css("ratecard")
+                search = st.text_input("🔎 Search", key="rate_search",
+                                       placeholder="name or style…", autocomplete="off")
+                view = bdf.sort_values("name")
+                if search.strip():
+                    q = search.lower()
+                    view = view[view["name"].str.lower().str.contains(q, na=False) |
+                                view["style"].fillna("").str.lower().str.contains(q, na=False)]
+                for _, b in view.iterrows():
+                    with st.container(border=True):
+                        pcol, dcol = st.columns([1, 2])
+                        with pcol:
+                            with st.container(key=f"ratecard_{int(b['id'])}"):
+                                photo_or_placeholder(b.get("photo_url"))
+                                if st.button(f"Rate {b['name']}", key=f"pick_{b['id']}"):
+                                    st.session_state["rate_beer_id"] = int(b["id"])
+                                    st.rerun()
+                            st.caption("Tap photo to rate")
+                        with dcol:
+                            st.markdown(f"### {b['name']}")
+                            meta = beer_meta(b)
+                            if meta:
+                                st.caption(" · ".join(meta))
+            else:
+                brow = picked.iloc[0]
+                bid = int(brow["id"])
+                if st.button("← Choose a different beer"):
+                    st.session_state.pop("rate_beer_id", None)
+                    st.rerun()
+
+                _, pmid, _ = st.columns([1, 2, 1])
+                with pmid:
+                    photo_or_placeholder(brow.get("photo_url"), height=220)
+                st.markdown(f"<div style='text-align:center;'><h3 style='margin-bottom:4px;'>"
+                            f"{esc(brow['name'])}</h3></div>", unsafe_allow_html=True)
+
+                existing = get_rating(bid, EMAIL)
+                if existing:
+                    st.caption("You've rated this before — sliders show your last scores.")
+                grow = lb[lb["beer_id"] == bid].iloc[0]
+                if grow["n_raters"] > 0:
+                    st.markdown(f"Group so far: {star_html(grow['avg'], 16)} "
+                                f"**{grow['avg']:.2f}/5** from {int(grow['n_raters'])} taster(s)",
+                                unsafe_allow_html=True)
+
+                scores = score_inputs("rate", existing)
+                notes = st.text_input("Your note (optional)",
+                                      value=(existing or {}).get("notes") or "",
+                                      key="rate_notes", autocomplete="off")
+                avg = sum(scores.values()) / len(DIM_KEYS)
+                st.markdown(star_html(avg, 24) + f" &nbsp;<b>{avg:.2f}/5</b>",
                             unsafe_allow_html=True)
 
-            scores = score_inputs("rate", existing)
-            notes = st.text_input("Your note (optional)",
-                                  value=(existing or {}).get("notes") or "", key="rate_notes")
-            avg = sum(scores.values()) / len(DIM_KEYS)
-            st.markdown(star_html(avg, 24) + f" &nbsp;<b>{avg:.2f}/5</b>",
-                        unsafe_allow_html=True)
-
-            if st.button("Save my scores ⭐", type="primary", use_container_width=True):
-                with st.spinner("Saving…"):
-                    upsert_rating(bid, EMAIL, NAME, scores, notes.strip())
-                    new_lb = build_leaderboard(fetch_beers(), fetch_ratings())
-                    new_avg = float(new_lb[new_lb["beer_id"] == bid]["avg"].iloc[0])
-                st.session_state["flash"] = (brow["name"], new_avg)
-                for k in DIM_KEYS:
-                    st.session_state.pop(f"rate_{k}", None)
-                st.session_state.pop("rate_notes", None)
-                st.rerun()
+                if st.button("Save my scores ⭐", type="primary", use_container_width=True):
+                    with st.spinner("Saving…"):
+                        upsert_rating(bid, EMAIL, NAME, scores, notes.strip())
+                        new_lb = build_leaderboard(fetch_beers(), fetch_ratings())
+                        new_avg = float(new_lb[new_lb["beer_id"] == bid]["avg"].iloc[0])
+                    st.session_state["flash"] = (brow["name"], new_avg)
+                    for k in DIM_KEYS:
+                        st.session_state.pop(f"rate_{k}", None)
+                    st.session_state.pop("rate_notes", None)
+                    st.rerun()
 
 
 # ---------------------------------------------------------------------------
 # Browse & Leaderboard  (public) — one view: beers ranked by score with
 # photos; click a beer's photo to open its full score breakdown.
 # ---------------------------------------------------------------------------
-def photo_or_placeholder(url, height=150):
-    if pd.notna(url):
-        st.image(url, use_container_width=True)
-    else:
-        st.markdown(f"<div style='height:{height}px;display:flex;"
-                    "align-items:center;justify-content:center;"
-                    "border:1px dashed #bbb;border-radius:8px;color:#999;'>"
-                    "No photo</div>", unsafe_allow_html=True)
-
-
-def beer_meta(row):
-    meta = [p for p in (row.get("style"), row.get("origin")) if pd.notna(p) and p]
-    if pd.notna(row.get("abv")):
-        meta.append(f"{row['abv']:.1f}% ABV")
-    return meta
-
-
-esc = html.escape  # user-entered text goes through unsafe_allow_html below
-
-
 with T["browse"]:
     if lb.empty:
         st.info("Nothing to browse yet.")
@@ -379,22 +438,7 @@ with T["browse"]:
                         f"</div></div>", unsafe_allow_html=True)
                 st.write("")
 
-            # Overlay each photocard's (invisible) button on top of its photo,
-            # so clicking the photo itself opens the beer — st.image has no
-            # click handler, so this is done with a CSS overlay instead. The
-            # button stays in the DOM (opacity, not display:none) so it's
-            # still reachable by keyboard and screen readers.
-            st.markdown("""
-                <style>
-                div[class*="st-key-photocard_"] { position: relative; cursor: pointer; }
-                div[class*="st-key-photocard_"] .stButton {
-                    position: absolute; inset: 0; z-index: 1; margin: 0;
-                }
-                div[class*="st-key-photocard_"] .stButton button {
-                    width: 100%; height: 100%; opacity: 0; border: 0; padding: 0;
-                }
-                </style>
-            """, unsafe_allow_html=True)
+            clickable_photo_css("photocard")
 
             search = st.text_input("🔎 Search", key="browse_search", placeholder="name or style…")
             view = lb.sort_values("avg", ascending=False, na_position="last")
