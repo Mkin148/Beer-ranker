@@ -49,11 +49,24 @@ def fetch_ratings():
     return sb().table("ratings").select("*").execute().data
 
 
+def fetch_photos():
+    return sb().table("beer_photos").select("*").order("created_at").execute().data
+
+
 def add_beer(name, style, origin, abv, description, photo_url):
-    sb().table("beers").insert({
+    row = sb().table("beers").insert({
         "name": name, "style": style, "origin": origin, "abv": abv,
         "description": description, "photo_url": photo_url,
-    }).execute()
+    }).execute().data
+    return row[0]["id"]
+
+
+def add_photo(beer_id, url):
+    sb().table("beer_photos").insert({"beer_id": beer_id, "photo_url": url}).execute()
+
+
+def delete_photo(photo_id):
+    sb().table("beer_photos").delete().eq("id", photo_id).execute()
 
 
 def upsert_rating(beer_id, email, taster_name, scores, notes):
@@ -148,6 +161,19 @@ def beer_meta(row):
     return meta
 
 
+def gallery_urls(beer_id, cover_url):
+    """All photo URLs for a beer: cover first (if set), then extras from
+    beer_photos, de-duplicated. `photos` is the full list loaded once per run."""
+    urls = [cover_url] if pd.notna(cover_url) and cover_url else []
+    urls += [p["photo_url"] for p in photos if p["beer_id"] == beer_id]
+    seen, out = set(), []
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
 esc = html.escape  # user-entered text goes through unsafe_allow_html below
 
 
@@ -189,6 +215,7 @@ def clickable_photo_css(key_prefix):
 # ---------------------------------------------------------------------------
 beers = fetch_beers()
 ratings = fetch_ratings()
+photos = fetch_photos()
 lb = build_leaderboard(beers, ratings)
 
 st.title("🍺 Meet and Drink")
@@ -229,7 +256,7 @@ T = {key: obj for (key, _), obj in zip(tab_defs, _objs)}
 if "add" in T:
     with T["add"]:
         st.subheader("Add a beer")
-        st.caption("Add the details and a photo — score it from the Rate beers tab.")
+        st.caption("Add the details and photos — score it from the Rate beers tab.")
         name = st.text_input("Beer name *", key="add_name", placeholder="e.g. Petrus Blonde",
                              autocomplete="off")
         c1, c2, c3 = st.columns(3)
@@ -242,8 +269,8 @@ if "add" in T:
                               placeholder="e.g. 6.5")
         description = st.text_area("Description (shared)", key="add_desc",
                                    placeholder="What is this beer? Colour, vibe…")
-        photo_file = st.file_uploader("Photo", type=["png", "jpg", "jpeg", "webp"],
-                                      key="add_photo")
+        photo_files = st.file_uploader("Photos", type=["png", "jpg", "jpeg", "webp"],
+                                       accept_multiple_files=True, key="add_photo")
 
         if st.button("Add beer 🍺", type="primary", use_container_width=True):
             dupe = next((b for b in beers
@@ -256,9 +283,12 @@ if "add" in T:
                           "score the existing one instead.")
             else:
                 with st.spinner("Saving…"):
-                    url = upload_photo(photo_file) if photo_file else None
-                    add_beer(name.strip(), style.strip(), origin.strip(), abv,
-                             description.strip(), url)
+                    urls = [upload_photo(f) for f in photo_files]
+                    cover = urls[0] if urls else None
+                    bid = add_beer(name.strip(), style.strip(), origin.strip(), abv,
+                                   description.strip(), cover)
+                    for url in urls:
+                        add_photo(bid, url)
                 st.session_state["flash"] = (name.strip(), None)
                 for key in ["add_name", "add_style", "add_origin", "add_abv",
                             "add_desc", "add_photo"]:
@@ -372,9 +402,13 @@ with T["browse"]:
                 st.session_state.pop("selected_beer", None)
                 st.rerun()
 
-            _, pmid, _ = st.columns([1, 2, 1])
-            with pmid:
-                photo_or_placeholder(row.get("photo_url"), height=260)
+            gallery = gallery_urls(int(row["beer_id"]), row.get("photo_url"))
+            if len(gallery) > 1:
+                st.image(gallery, width=220)
+            else:
+                _, pmid, _ = st.columns([1, 2, 1])
+                with pmid:
+                    photo_or_placeholder(gallery[0] if gallery else None, height=260)
 
             meta = beer_meta(row)
             meta_html = (f"<div style='color:#888;'>{esc(' · '.join(str(m) for m in meta))}"
@@ -593,13 +627,40 @@ if "manage" in T:
                 st.markdown(f"<div style='text-align:center;'><h3 style='margin-bottom:4px;'>"
                             f"{esc(brow['name'])}</h3></div>", unsafe_allow_html=True)
 
-                st.subheader("Replace photo")
-                up = st.file_uploader("Upload photo", type=["png", "jpg", "jpeg", "webp"],
-                                      key="mng_photo")
-                if up and st.button("Save photo"):
+                st.subheader("Photos")
+                gallery = gallery_urls(bid, brow.get("photo_url"))
+                if not gallery:
+                    st.caption("No photos yet.")
+                else:
+                    cols = st.columns(min(4, len(gallery)))
+                    for i, url in enumerate(gallery):
+                        with cols[i % len(cols)]:
+                            st.image(url, use_container_width=True)
+                            if url == brow.get("photo_url"):
+                                st.caption("Cover")
+                            if st.button("🗑 Delete", key=f"delphoto_{bid}_{i}",
+                                        use_container_width=True):
+                                match = next((p for p in photos if p["beer_id"] == bid
+                                            and p["photo_url"] == url), None)
+                                if match:
+                                    delete_photo(match["id"])
+                                if url == brow.get("photo_url"):
+                                    remaining = [u for u in gallery if u != url]
+                                    update_photo_url(bid, remaining[0] if remaining else None)
+                                st.success("Photo deleted.")
+                                st.rerun()
+
+                st.subheader("Add photos")
+                up = st.file_uploader("Upload photos", type=["png", "jpg", "jpeg", "webp"],
+                                      accept_multiple_files=True, key="mng_photo")
+                if up and st.button("Save photos"):
                     with st.spinner("Uploading…"):
-                        update_photo_url(bid, upload_photo(up))
-                    st.success("Photo saved.")
+                        urls = [upload_photo(f) for f in up]
+                        for url in urls:
+                            add_photo(bid, url)
+                        if urls and not (pd.notna(brow.get("photo_url")) and brow.get("photo_url")):
+                            update_photo_url(bid, urls[0])
+                    st.success("Photo(s) saved.")
                     st.rerun()
 
                 st.divider()

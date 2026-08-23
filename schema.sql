@@ -1,4 +1,4 @@
--- Beer Ranker schema for Supabase (Postgres).
+-- Meet and Drink schema for Supabase (Postgres).
 -- Paste into the Supabase SQL editor and run once.
 
 create table if not exists beers (
@@ -10,6 +10,15 @@ create table if not exists beers (
     description text,
     photo_url   text,
     created_at  timestamptz not null default now()
+);
+
+-- Extra photos beyond the beer's cover photo (beers.photo_url). A beer can
+-- have any number of these; the cover is set/updated separately by the app.
+create table if not exists beer_photos (
+    id         bigint generated always as identity primary key,
+    beer_id    bigint not null references beers(id) on delete cascade,
+    photo_url  text not null,
+    created_at timestamptz not null default now()
 );
 
 create table if not exists ratings (
@@ -30,5 +39,6 @@ create table if not exists ratings (
 -- Lock the tables down. The app connects with the service_role key from
 -- server-side secrets, which BYPASSES row-level security. Enabling RLS with no
 -- policies means the public anon key can't read or write anything.
-alter table beers   enable row level security;
-alter table ratings enable row level security;
+alter table beers       enable row level security;
+alter table ratings     enable row level security;
+alter table beer_photos enable row level security;

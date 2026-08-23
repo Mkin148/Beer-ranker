@@ -52,7 +52,13 @@ There is no lint config or test suite in this repo.
 
 - `beers`: id, name, style, origin, abv, description, photo_url, created_at.
   Added via the Add beer tab with no score attached — it's rated separately
-  from the Rate beers tab.
+  from the Rate beers tab. `photo_url` is the "cover" photo shown in list/grid
+  cards — kept in sync with `beer_photos` by the app (never stale by itself).
+- `beer_photos`: id, beer_id (FK, ON DELETE CASCADE), photo_url, created_at.
+  Extra photos beyond the cover; `app.py`'s `gallery_urls()` merges cover +
+  these, de-duplicated, for gallery views. Deleting the cover photo promotes
+  another remaining photo (or None) via `update_photo_url()` — there's no
+  dedicated "set cover" control.
 - `ratings`: id, beer_id (FK, ON DELETE CASCADE), taster_email, taster_name,
   five score columns, notes, created_at. `UNIQUE(beer_id, taster_email)` — one
   rating per taster per beer, updated via upsert.
